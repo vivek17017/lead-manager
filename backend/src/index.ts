@@ -5,7 +5,7 @@ import cookieParser from "cookie-parser";
 
 import { pool } from "./db";
 import { authRouter } from "./auth";
-
+import { leadsRouter } from "./leads";
 const app = express();
 const PORT = Number(process.env.PORT || 4000);
 
@@ -54,7 +54,7 @@ app.get("/api/health", async (_req, res) => {
 
 // Authentication endpoints
 app.use("/api/auth", authRouter);
-
+app.use("/api/leads", leadsRouter);
 // Unknown API endpoints
 app.use("/api", (_req, res) => {
   res.status(404).json({

@@ -1,0 +1,332 @@
+
+import {
+  Router,
+  type Request,
+  type Response,
+  type RequestHandler
+} from "express";
+
+import { z } from "zod";
+import { pool } from "./db";
+import { requireAuth } from "./auth";
+
+const router = Router();
+
+// ---------- Validation ----------
+
+const statusSchema = z.enum([
+  "New",
+  "Contacted",
+  "Qualified",
+  "Lost"
+]);
+
+const sourceSchema = z.enum([
+  "Website",
+  "Referral",
+  "LinkedIn",
+  "Cold Call",
+  "Other"
+]);
+
+const leadFields = {
+  name: z.string().trim().min(2).max(100),
+
+  email: z.string()
+    .trim()
+    .toLowerCase()
+    .email()
+    .max(255),
+
+  phone: z.string()
+    .trim()
+    .min(7)
+    .max(30)
+    .regex(
+      /^\+?[0-9][0-9 ()-]*$/,
+      "Invalid phone number format"
+    ),
+
+  company: z.string().trim().min(1).max(150),
+
+  source: sourceSchema,
+
+  status: statusSchema
+};
+
+// Create: all lead details required except status
+const createLeadSchema = z.object({
+  ...leadFields,
+  status: statusSchema.default("New")
+}).strict();
+
+// Update: allow editing one or more fields
+const updateLeadSchema = z.object(leadFields)
+  .strict()
+  .partial()
+  .refine(
+    (data) => Object.keys(data).length > 0,
+    "Provide at least one field to update"
+  );
+
+// ---------- Types ----------
+
+type Lead = {
+  id: string;
+  user_id: string;
+  name: string;
+  email: string;
+  phone: string;
+  company: string;
+  source: string;
+  status: string;
+  created_at: Date;
+  updated_at: Date;
+};
+
+// Explicit columns returned from the database
+const leadColumns = `
+  id, user_id, name, email, phone, company,
+  source, status, created_at, updated_at
+`;
+
+// Validate PostgreSQL BIGINT IDs
+function validLeadId(
+  value: string | undefined|unknown
+): value is string {
+  if (typeof value !== "string" || !/^[1-9]\d{0,18}$/.test(value)) {
+    return false;
+  }
+
+  return BigInt(value) <= 9223372036854775807n;
+}
+
+// Format validation errors for API clients
+function validationErrors(
+  issues: z.ZodIssue[]
+) {
+  return issues.map((issue) => ({
+    field: issue.path.join("."),
+    message: issue.message
+  }));
+}
+
+// Forward asynchronous errors to Express
+type AsyncRoute = (
+  req: Request,
+  res: Response
+) => Promise<void>;
+
+function asyncHandler(fn: AsyncRoute): RequestHandler {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res)).catch(next);
+  };
+}
+
+// All routes below require a valid JWT
+router.use(requireAuth);
+
+// ---------- CREATE ----------
+
+// POST /api/leads
+router.post("/", asyncHandler(async (req, res) => {
+  const parsed = createLeadSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({
+      message: "Invalid lead data",
+      errors: validationErrors(parsed.error.issues)
+    });
+    return;
+  }
+
+  const {
+    name,
+    email,
+    phone,
+    company,
+    source,
+    status
+  } = parsed.data;
+
+  const userId: string = res.locals.userId;
+
+  const result = await pool.query<Lead>(
+    `INSERT INTO leads (
+      user_id, name, email, phone,
+      company, source, status
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    RETURNING ${leadColumns}`,
+    [
+      userId,
+      name,
+      email,
+      phone,
+      company,
+      source,
+      status
+    ]
+  );
+
+  res.status(201).json({
+    message: "Lead created successfully",
+    lead: result.rows[0]
+  });
+}));
+
+// ---------- READ ALL ----------
+
+// GET /api/leads
+router.get("/", asyncHandler(async (_req, res) => {
+  const userId: string = res.locals.userId;
+
+  const result = await pool.query<Lead>(
+    `SELECT ${leadColumns}
+     FROM leads
+     WHERE user_id = $1
+     ORDER BY created_at DESC, id DESC`,
+    [userId]
+  );
+
+  res.status(200).json({
+    count: result.rows.length,
+    leads: result.rows
+  });
+}));
+
+// ---------- READ ONE ----------
+
+// GET /api/leads/:id
+router.get("/:id", asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  if (!validLeadId(id)) {
+    res.status(400).json({
+      message: "Invalid lead ID"
+    });
+    return;
+  }
+
+  const userId: string = res.locals.userId;
+
+  const result = await pool.query<Lead>(
+    `SELECT ${leadColumns}
+     FROM leads
+     WHERE id = $1 AND user_id = $2`,
+    [id, userId]
+  );
+
+  const lead = result.rows[0];
+
+  if (!lead) {
+    res.status(404).json({
+      message: "Lead not found"
+    });
+    return;
+  }
+
+  res.status(200).json({ lead });
+}));
+
+// ---------- UPDATE ----------
+
+// PATCH /api/leads/:id
+router.patch("/:id", asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  if (!validLeadId(id)) {
+    res.status(400).json({
+      message: "Invalid lead ID"
+    });
+    return;
+  }
+
+  const parsed = updateLeadSchema.safeParse(req.body);
+
+  if (!parsed.success) {
+    res.status(400).json({
+      message: "Invalid update data",
+      errors: validationErrors(parsed.error.issues)
+    });
+    return;
+  }
+
+  const data = parsed.data;
+  const userId: string = res.locals.userId;
+
+  const result = await pool.query<Lead>(
+    `UPDATE leads
+     SET
+       name = COALESCE($3, name),
+       email = COALESCE($4, email),
+       phone = COALESCE($5, phone),
+       company = COALESCE($6, company),
+       source = COALESCE($7, source),
+       status = COALESCE($8, status),
+       updated_at = NOW()
+     WHERE id = $1 AND user_id = $2
+     RETURNING ${leadColumns}`,
+    [
+      id,
+      userId,
+      data.name ?? null,
+      data.email ?? null,
+      data.phone ?? null,
+      data.company ?? null,
+      data.source ?? null,
+      data.status ?? null
+    ]
+  );
+
+  const lead = result.rows[0];
+
+  if (!lead) {
+    res.status(404).json({
+      message: "Lead not found"
+    });
+    return;
+  }
+
+  res.status(200).json({
+    message: "Lead updated successfully",
+    lead
+  });
+}));
+
+// ---------- DELETE ----------
+
+// DELETE /api/leads/:id
+router.delete("/:id", asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  if (!validLeadId(id)) {
+    res.status(400).json({
+      message: "Invalid lead ID"
+    });
+    return;
+  }
+
+  const userId: string = res.locals.userId;
+
+  const result = await pool.query<{ id: string }>(
+    `DELETE FROM leads
+     WHERE id = $1 AND user_id = $2
+     RETURNING id`,
+    [id, userId]
+  );
+
+  if (result.rows.length === 0) {
+    res.status(404).json({
+      message: "Lead not found"
+    });
+    return;
+  }
+
+  res.status(200).json({
+    message: "Lead deleted successfully",
+    id: result.rows[0].id
+  });
+}));
+
+export { router as leadsRouter };
