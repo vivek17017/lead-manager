@@ -1,4 +1,22 @@
 
+## Live Demo
+
+**Live Application:** https://lead-manager-551y.onrender.com/login
+
+**GitHub Repository:** https://github.com/vivek17017/lead-manager
+
+### Demo Instructions
+
+1. Open the live application.
+2. Select Sign up to create an account.
+3. Log in with your credentials.
+4. Add leads and update their statuses.
+5. Try searching, filtering, sorting, and pagination.
+6. View the dashboard statistics.
+7. Log out when finished.
+
+Each account can access only its own leads.
+
 # Lead Manager
 
 A full-stack sales lead management application built using
