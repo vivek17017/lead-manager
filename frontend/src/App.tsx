@@ -1,45 +1,38 @@
 
-import { useEffect, useState } from "react";
+import {
+  Navigate,
+  Route,
+  Routes
+} from "react-router";
 
-function App() {
-  const [status, setStatus] = useState("Checking API...");
+import LoginPage from "./pages/LoginPage";
+import SignupPage from "./pages/SignupPage";
+import DashboardPage from "./pages/DashboardPage";
+import ProtectedRoute from "./components/ProtectedRoute";
 
-  useEffect(() => {
-    const controller = new AbortController();
-
-    fetch("/api/health", {
-      signal: controller.signal
-    })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error("API request failed");
-        }
-
-        return response.json();
-      })
-      .then(() => {
-        if (!controller.signal.aborted) {
-          setStatus("Connected to backend");
-        }
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setStatus("Backend unavailable");
-        }
-      });
-
-    return () => controller.abort();
-  }, []);
-
+export default function App() {
   return (
-    <main style={{ padding: "40px", fontFamily: "Arial" }}>
-      <h1>Lead Manager</h1>
-      <p>Full-stack CRM application</p>
+    <Routes>
+      <Route
+        path="/"
+        element={<Navigate to="/dashboard" replace />}
+      />
 
-      <h2>API Connection</h2>
-      <p>{status}</p>
-    </main>
+      <Route path="/login" element={<LoginPage />} />
+
+      <Route path="/signup" element={<SignupPage />} />
+
+      <Route element={<ProtectedRoute />}>
+        <Route
+          path="/dashboard"
+          element={<DashboardPage />}
+        />
+      </Route>
+
+      <Route
+        path="*"
+        element={<Navigate to="/" replace />}
+      />
+    </Routes>
   );
 }
-
-export default App;
