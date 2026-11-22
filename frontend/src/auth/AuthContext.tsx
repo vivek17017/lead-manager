@@ -124,7 +124,7 @@ export function AuthProvider({
         error,
         login,
         logout,
-        refresh: () => checkSession()
+        refresh: checkSession
       }}
     >
       {children}

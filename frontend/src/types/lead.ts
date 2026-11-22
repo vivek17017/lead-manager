@@ -40,10 +40,22 @@ export type LeadInput = Pick<
 >;
 
 // API responses
+
+export type PaginationInfo = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+};
+
 export type LeadsResponse = {
   count: number;
   leads: Lead[];
+  pagination: PaginationInfo;
 };
+
 
 export type SaveLeadResponse = {
   message: string;

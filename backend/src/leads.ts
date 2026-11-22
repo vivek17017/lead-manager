@@ -34,6 +34,41 @@ const sourceSchema = z.enum([
   "Other"
 ]);
 
+const listQuerySchema = z.object({
+  search: z.string()
+    .trim()
+    .max(100)
+    .default(""),
+
+  status: statusSchema.optional(),
+
+  sort: z.enum([
+    "newest",
+    "oldest",
+    "name_asc",
+    "name_desc"
+  ]).default("newest"),
+
+  page: z.coerce.number()
+    .int()
+    .min(1)
+    .max(100000)
+    .default(1),
+
+  limit: z.coerce.number()
+    .int()
+    .min(1)
+    .max(50)
+    .default(10)
+}).strict();
+
+const sortSql = {
+  newest: "created_at DESC, id DESC",
+  oldest: "created_at ASC, id ASC",
+  name_asc: "LOWER(name) ASC, id ASC",
+  name_desc: "LOWER(name) DESC, id DESC"
+} as const;
+
 const leadFields = {
   name: z.string().trim().min(2).max(100),
 
@@ -177,22 +212,116 @@ router.post("/", asyncHandler(async (req, res) => {
 // ---------- READ ALL ----------
 
 // GET /api/leads
-router.get("/", asyncHandler(async (_req, res) => {
+
+// ---------- READ ALL WITH FILTERS AND PAGINATION ----------
+
+// GET /api/leads
+router.get("/", asyncHandler(async (req, res) => {
+  // 1. Validate query parameters
+  const parsed = listQuerySchema.safeParse(req.query);
+
+  if (!parsed.success) {
+    sendValidationError(
+      res,
+      parsed.error.issues,
+      "Invalid search or pagination parameters"
+    );
+    return;
+  }
+
+  const {
+    search,
+    status,
+    sort,
+    page,
+    limit
+  } = parsed.data;
+
+  // 2. Get the user ID from verified authentication
   const userId: string = res.locals.userId;
+
+  // 3. Build safe WHERE conditions
+  const conditions: string[] = ["user_id = $1"];
+  const values: Array<string | number> = [userId];
+
+  if (search) {
+    // Treat %, _ and backslash as literal search text
+    const escapedSearch = search.replace(
+      /[\\%_]/g,
+      (character) => "\\" + character
+    );
+
+    values.push(`%${escapedSearch}%`);
+
+    conditions.push(
+      `name ILIKE $${values.length}`
+    );
+  }
+
+  if (status) {
+    values.push(status);
+
+    conditions.push(
+      `status = $${values.length}`
+    );
+  }
+
+  const whereSql = conditions.join(" AND ");
+
+  // 4. Count all matching leads, before pagination
+  const countResult = await pool.query<{ total: string }>(
+    `SELECT COUNT(*) AS total
+     FROM leads
+     WHERE ${whereSql}`,
+    values
+  );
+
+  const total = Number(countResult.rows[0].total);
+
+  // 5. Calculate pagination
+  const totalPages = Math.max(
+    1,
+    Math.ceil(total / limit)
+  );
+
+  const offset = (page - 1) * limit;
+
+  // 6. Get the requested page
+  const queryValues = [
+    ...values,
+    limit,
+    offset
+  ];
+
+  const limitPlaceholder = `$${values.length + 1}`;
+  const offsetPlaceholder = `$${values.length + 2}`;
 
   const result = await pool.query<Lead>(
     `SELECT ${leadColumns}
      FROM leads
-     WHERE user_id = $1
-     ORDER BY created_at DESC, id DESC`,
-    [userId]
+     WHERE ${whereSql}
+     ORDER BY ${sortSql[sort]}
+     LIMIT ${limitPlaceholder}
+     OFFSET ${offsetPlaceholder}`,
+    queryValues
   );
 
+  // 7. Return records and pagination metadata
   res.status(200).json({
     count: result.rows.length,
-    leads: result.rows
+    leads: result.rows,
+
+    pagination: {
+      page,
+      limit,
+      total,
+      totalPages,
+      hasNextPage: page < totalPages,
+      hasPreviousPage: page > 1
+    }
   });
 }));
+
 
 // ---------- READ ONE ----------
 
