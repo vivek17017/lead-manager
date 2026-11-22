@@ -6,6 +6,11 @@ import {
   type RequestHandler
 } from "express";
 
+import {
+  sendApiError,
+  sendValidationError
+} from "./api-errors";
+
 import { z } from "zod";
 import { pool } from "./db";
 import { requireAuth } from "./auth";
@@ -102,14 +107,7 @@ function validLeadId(
 }
 
 // Format validation errors for API clients
-function validationErrors(
-  issues: z.ZodIssue[]
-) {
-  return issues.map((issue) => ({
-    field: issue.path.join("."),
-    message: issue.message
-  }));
-}
+
 
 // Forward asynchronous errors to Express
 type AsyncRoute = (
@@ -133,12 +131,13 @@ router.post("/", asyncHandler(async (req, res) => {
   const parsed = createLeadSchema.safeParse(req.body);
 
   if (!parsed.success) {
-    res.status(400).json({
-      message: "Invalid lead data",
-      errors: validationErrors(parsed.error.issues)
-    });
-    return;
-  }
+  sendValidationError(
+    res,
+    parsed.error.issues,
+    "Invalid lead data"
+  );
+  return;
+}
 
   const {
     name,
@@ -202,9 +201,12 @@ router.get("/:id", asyncHandler(async (req, res) => {
   const { id } = req.params;
 
   if (!validLeadId(id)) {
-    res.status(400).json({
-      message: "Invalid lead ID"
-    });
+    sendApiError(
+  res,
+  400,
+  "INVALID_LEAD_ID",
+  "Invalid lead ID"
+);
     return;
   }
 
@@ -220,9 +222,12 @@ router.get("/:id", asyncHandler(async (req, res) => {
   const lead = result.rows[0];
 
   if (!lead) {
-    res.status(404).json({
-      message: "Lead not found"
-    });
+    sendApiError(
+  res,
+  404,
+  "LEAD_NOT_FOUND",
+  "Lead not found"
+);
     return;
   }
 
@@ -236,21 +241,25 @@ router.patch("/:id", asyncHandler(async (req, res) => {
   const { id } = req.params;
 
   if (!validLeadId(id)) {
-    res.status(400).json({
-      message: "Invalid lead ID"
-    });
+    sendApiError(
+  res,
+  400,
+  "INVALID_LEAD_ID",
+  "Invalid lead ID"
+);
     return;
   }
 
   const parsed = updateLeadSchema.safeParse(req.body);
 
   if (!parsed.success) {
-    res.status(400).json({
-      message: "Invalid update data",
-      errors: validationErrors(parsed.error.issues)
-    });
-    return;
-  }
+  sendValidationError(
+    res,
+    parsed.error.issues,
+    "Invalid update data"
+  );
+  return;
+}
 
   const data = parsed.data;
   const userId: string = res.locals.userId;
@@ -282,9 +291,12 @@ router.patch("/:id", asyncHandler(async (req, res) => {
   const lead = result.rows[0];
 
   if (!lead) {
-    res.status(404).json({
-      message: "Lead not found"
-    });
+    sendApiError(
+  res,
+  404,
+  "LEAD_NOT_FOUND",
+  "Lead not found"
+);
     return;
   }
 
@@ -301,9 +313,12 @@ router.delete("/:id", asyncHandler(async (req, res) => {
   const { id } = req.params;
 
   if (!validLeadId(id)) {
-    res.status(400).json({
-      message: "Invalid lead ID"
-    });
+    sendApiError(
+  res,
+  400,
+  "INVALID_LEAD_ID",
+  "Invalid lead ID"
+);
     return;
   }
 
@@ -317,9 +332,12 @@ router.delete("/:id", asyncHandler(async (req, res) => {
   );
 
   if (result.rows.length === 0) {
-    res.status(404).json({
-      message: "Lead not found"
-    });
+    sendApiError(
+  res,
+  404,
+  "LEAD_NOT_FOUND",
+  "Lead not found"
+);
     return;
   }
 

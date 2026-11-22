@@ -6,6 +6,12 @@ import { z } from "zod";
 import { rateLimit } from "express-rate-limit";
 import { pool } from "./db";
 
+import {
+  sendApiError,
+  sendValidationError,
+  hasDatabaseCode
+} from "./api-errors";
+
 const router = Router();
 
 const rawJWT_SECRET = process.env.JWT_SECRET;
@@ -55,15 +61,21 @@ type UserWithPassword = PublicUser & {
 };
 
 // Protect authentication endpoints against excessive requests
+
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 20,
   standardHeaders: "draft-8",
   legacyHeaders: false,
+
   message: {
-    message: "Too many authentication attempts. Try again later."
+    error: {
+      code: "RATE_LIMITED",
+      message: "Too many authentication attempts. Try again later."
+    }
   }
 });
+
 
 // Create a signed JWT
 function createToken(userId: string): string {
@@ -106,18 +118,24 @@ export function requireAuth(
   const token = req.cookies?.[COOKIE_NAME];
 
   if (typeof token !== "string") {
-    res.status(401).json({
-      message: "Authentication required"
-    });
+    sendApiError(
+  res,
+  401,
+  "UNAUTHORIZED",
+  "Authentication required"
+);
     return;
   }
 
   const userId = verifyToken(token);
 
   if (!userId) {
-    res.status(401).json({
-      message: "Invalid or expired session"
-    });
+    sendApiError(
+  res,
+  401,
+  "UNAUTHORIZED",
+  "Invalid or expired session"
+);
     return;
   }
 
@@ -126,19 +144,17 @@ export function requireAuth(
 }
 
 // POST /api/auth/signup
-router.post("/signup", authLimiter, async (req, res) => {
+router.post("/signup", authLimiter, async (req, res,next) => {
   const result = signupSchema.safeParse(req.body);
 
   if (!result.success) {
-    res.status(400).json({
-      message: "Invalid signup data",
-      errors: result.error.issues.map((issue) => ({
-        field: issue.path.join("."),
-        message: issue.message
-      }))
-    });
-    return;
-  }
+  sendValidationError(
+    res,
+    result.error.issues,
+    "Invalid signup data"
+  );
+  return;
+}
 
   const { name, email, password } = result.data;
 
@@ -156,38 +172,35 @@ router.post("/signup", authLimiter, async (req, res) => {
       message: "Account created successfully. Please log in.",
       user: newUser.rows[0]
     });
+  
   } catch (error: unknown) {
-    // PostgreSQL error code 23505 = unique constraint violation
-    if (
-      error !== null &&
-      typeof error === "object" &&
-      "code" in error &&
-      error.code === "23505"
-    ) {
-      res.status(409).json({
-        message: "An account with this email already exists"
-      });
+    if (hasDatabaseCode(error, "23505")) {
+      sendApiError(
+        res,
+        409,
+        "EMAIL_ALREADY_EXISTS",
+        "An account with this email already exists"
+      );
       return;
     }
 
-    console.error("Signup error:", error);
-
-    res.status(500).json({
-      message: "Unable to create account"
-    });
+    next(error);
   }
+
 });
 
 // POST /api/auth/login
-router.post("/login", authLimiter, async (req, res) => {
+router.post("/login", authLimiter, async (req, res,next) => {
   const result = loginSchema.safeParse(req.body);
 
   if (!result.success) {
-    res.status(400).json({
-      message: "A valid email and password are required"
-    });
-    return;
-  }
+  sendValidationError(
+    res,
+    result.error.issues,
+    "A valid email and password are required"
+  );
+  return;
+}
 
   const { email, password } = result.data;
 
@@ -203,9 +216,12 @@ router.post("/login", authLimiter, async (req, res) => {
     const user = queryResult.rows[0];
 
     if (!user) {
-      res.status(401).json({
-        message: "Invalid email or password"
-      });
+      sendApiError(
+  res,
+  401,
+  "INVALID_CREDENTIALS",
+  "Invalid email or password"
+);
       return;
     }
 
@@ -215,9 +231,12 @@ router.post("/login", authLimiter, async (req, res) => {
     );
 
     if (!passwordMatches) {
-      res.status(401).json({
-        message: "Invalid email or password"
-      });
+      sendApiError(
+  res,
+  401,
+  "INVALID_CREDENTIALS",
+  "Invalid email or password"
+);
       return;
     }
 
@@ -237,16 +256,12 @@ router.post("/login", authLimiter, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error("Login error:", error);
-
-    res.status(500).json({
-      message: "Unable to log in"
-    });
-  }
+  next(error);
+}
 });
 
 // GET /api/auth/me
-router.get("/me", requireAuth, async (_req, res) => {
+router.get("/me", requireAuth, async (_req, res,next) => {
   try {
     const result = await pool.query<PublicUser>(
       `SELECT id, name, email
@@ -258,9 +273,12 @@ router.get("/me", requireAuth, async (_req, res) => {
     if (result.rows.length === 0) {
       res.clearCookie(COOKIE_NAME, cookieOptions);
 
-      res.status(401).json({
-        message: "Account no longer exists"
-      });
+      sendApiError(
+  res,
+  401,
+  "UNAUTHORIZED",
+  "Account no longer exists"
+);
       return;
     }
 
@@ -268,12 +286,8 @@ router.get("/me", requireAuth, async (_req, res) => {
       user: result.rows[0]
     });
   } catch (error) {
-    console.error("Get current user error:", error);
-
-    res.status(500).json({
-      message: "Unable to retrieve user"
-    });
-  }
+  next(error);
+}
 });
 
 // POST /api/auth/logout

@@ -1,38 +1,54 @@
 
 import "dotenv/config";
-import express, { type ErrorRequestHandler } from "express";
+
+import express from "express";
 import cookieParser from "cookie-parser";
 
 import { pool } from "./db";
 import { authRouter } from "./auth";
 import { leadsRouter } from "./leads";
+
+import {
+  apiErrorHandler,
+  sendApiError
+} from "./api-errors";
+
 const app = express();
+
 const PORT = Number(process.env.PORT || 4000);
 
-// Parse incoming JSON, with a request size limit
+// Parse JSON with a 10 KB body limit
 app.use(express.json({ limit: "10kb" }));
 
-// Parse incoming cookies
+// Read cookies sent by the browser
 app.use(cookieParser());
 
-// Require a custom header for state-changing API requests
+// Require a security header for state-changing requests
 app.use("/api", (req, res, next) => {
-  const writeMethods = ["POST", "PUT", "PATCH", "DELETE"];
+  const writeMethods = [
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE"
+  ];
 
   if (
     writeMethods.includes(req.method) &&
     req.get("X-Requested-With") !== "XMLHttpRequest"
   ) {
-    res.status(403).json({
-      message: "Missing request security header"
-    });
+    sendApiError(
+      res,
+      403,
+      "FORBIDDEN",
+      "Missing request security header"
+    );
     return;
   }
 
   next();
 });
 
-// Database health check
+// Health check
 app.get("/api/health", async (_req, res) => {
   try {
     await pool.query("SELECT 1");
@@ -43,48 +59,38 @@ app.get("/api/health", async (_req, res) => {
       message: "Lead Manager API is running"
     });
   } catch (error) {
-    console.error("Database health check failed:", error);
+    console.error(
+      "Database health check failed:",
+      error
+    );
 
-    res.status(503).json({
-      status: "error",
-      message: "Database temporarily unavailable"
-    });
+    sendApiError(
+      res,
+      503,
+      "DATABASE_UNAVAILABLE",
+      "Database temporarily unavailable. Please try again later."
+    );
   }
 });
 
-// Authentication endpoints
+// Register routes
 app.use("/api/auth", authRouter);
 app.use("/api/leads", leadsRouter);
+
 // Unknown API endpoints
 app.use("/api", (_req, res) => {
-  res.status(404).json({
-    message: "API endpoint not found"
-  });
+  sendApiError(
+    res,
+    404,
+    "NOT_FOUND",
+    "API endpoint not found"
+  );
 });
 
-// Centralized Express error handler
-const errorHandler: ErrorRequestHandler = (
-  error,
-  _req,
-  res,
-  _next
-) => {
-  if (error?.type === "entity.parse.failed") {
-    res.status(400).json({
-      message: "Invalid JSON request body"
-    });
-    return;
-  }
+// Centralized error handler: keep this last
+app.use(apiErrorHandler);
 
-  console.error("Unexpected server error:", error);
-
-  res.status(500).json({
-    message: "Internal server error"
-  });
-};
-
-app.use(errorHandler);
-
+// Start Express
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
