@@ -123,7 +123,13 @@ type Lead = {
   created_at: Date;
   updated_at: Date;
 };
-
+type LeadStatsRow = {
+  total: string;
+  new_count: string;
+  contacted_count: string;
+  qualified_count: string;
+  lost_count: string;
+};
 // Explicit columns returned from the database
 const leadColumns = `
   id, user_id, name, email, phone, company,
@@ -322,6 +328,50 @@ router.get("/", asyncHandler(async (req, res) => {
   });
 }));
 
+  // ---------- DASHBOARD STATISTICS ----------
+
+  // GET /api/leads/stats
+  router.get("/stats", asyncHandler(async (_req, res) => {
+    const userId: string = res.locals.userId;
+
+    const result = await pool.query<LeadStatsRow>(
+      `SELECT
+         COUNT(*) AS total,
+
+         COUNT(*) FILTER (
+           WHERE status = 'New'
+         ) AS new_count,
+
+         COUNT(*) FILTER (
+           WHERE status = 'Contacted'
+         ) AS contacted_count,
+
+         COUNT(*) FILTER (
+           WHERE status = 'Qualified'
+         ) AS qualified_count,
+
+         COUNT(*) FILTER (
+           WHERE status = 'Lost'
+         ) AS lost_count
+
+       FROM leads
+       WHERE user_id = $1`,
+      [userId]
+    );
+
+    const row = result.rows[0];
+
+    res.status(200).json({
+      stats: {
+        total: Number(row.total),
+        new: Number(row.new_count),
+        contacted: Number(row.contacted_count),
+        qualified: Number(row.qualified_count),
+        lost: Number(row.lost_count)
+      }
+    });
+  }));
+
 
 // ---------- READ ONE ----------
 
@@ -475,5 +525,9 @@ router.delete("/:id", asyncHandler(async (req, res) => {
     id: result.rows[0].id
   });
 }));
+
+
+
+
 
 export { router as leadsRouter };

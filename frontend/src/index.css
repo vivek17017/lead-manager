@@ -552,3 +552,186 @@ a:hover {
     text-align: center;
   }
 }
+
+/* ---------- Step 9: Dashboard statistics ---------- */
+
+.stats-section {
+  margin: 28px 0;
+}
+
+.stats-heading {
+  margin-bottom: 18px;
+}
+
+.stats-heading h2 {
+  font-size: 20px;
+  margin: 0 0 6px;
+}
+
+.stats-heading p {
+  margin: 0;
+  font-size: 14px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.stat-card {
+  --accent: #64748b;
+
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-top: 3px solid var(--accent);
+  border-radius: 12px;
+  padding: 20px;
+  min-width: 0;
+
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.03);
+
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.07);
+}
+
+.stat-total {
+  --accent: #475569;
+}
+
+.stat-new {
+  --accent: #2563eb;
+}
+
+.stat-contacted {
+  --accent: #d97706;
+}
+
+.stat-qualified {
+  --accent: #16a34a;
+}
+
+.stat-lost {
+  --accent: #dc2626;
+}
+
+.stat-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.stat-label {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.stat-indicator {
+  height: 9px;
+  width: 9px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.stat-number {
+  display: block;
+  color: #0f172a;
+  font-size: 30px;
+  line-height: 1.2;
+  margin-top: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-description {
+  color: #64748b;
+  font-size: 12px;
+  margin: 10px 0 0;
+}
+
+.stat-progress {
+  height: 5px;
+  background: #e2e8f0;
+  border-radius: 20px;
+  overflow: hidden;
+  margin-top: 14px;
+}
+
+.stat-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 20px;
+  transition: width 0.25s ease;
+}
+
+.stats-loading,
+.stats-error {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 22px;
+}
+
+.stats-loading {
+  color: #64748b;
+}
+
+/* ---------- Accessible keyboard focus ---------- */
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+/* ---------- Responsive dashboard cards ---------- */
+
+@media (max-width: 1000px) {
+  .stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 700px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .stat-card {
+    padding: 16px;
+  }
+
+  .stat-number {
+    font-size: 26px;
+  }
+
+  .stat-total {
+    grid-column: span 2;
+  }
+
+  .stats-heading h2 {
+    font-size: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stat-card,
+  .stat-progress-fill {
+    transition: none;
+  }
+
+  .stat-card:hover {
+    transform: none;
+  }
+}

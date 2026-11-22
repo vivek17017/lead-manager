@@ -66,3 +66,15 @@ export type DeleteLeadResponse = {
   message: string;
   id: string;
 };
+
+export type LeadStats = {
+  total: number;
+  new: number;
+  contacted: number;
+  qualified: number;
+  lost: number;
+};
+
+export type LeadStatsResponse = {
+  stats: LeadStats;
+};

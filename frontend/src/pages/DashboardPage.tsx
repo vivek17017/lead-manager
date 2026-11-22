@@ -12,7 +12,7 @@ import { useAuth } from "../auth/AuthContext";
 
 import LeadForm from "../components/LeadForm";
 import LeadsTable from "../components/LeadsTable";
-
+import LeadStatsCards from "../components/LeadStatsCards";
 import {
   LEAD_STATUSES,
   type Lead,
@@ -21,7 +21,9 @@ import {
   type LeadsResponse,
   type PaginationInfo,
   type SaveLeadResponse,
-  type DeleteLeadResponse
+  type DeleteLeadResponse,
+  type LeadStats,
+  type LeadStatsResponse
 } from "../types/lead";
 
 type SortOption =
@@ -42,6 +44,17 @@ export default function DashboardPage() {
 
   // ---------- LEAD DATA ----------
   const [leads, setLeads] = useState<Lead[]>([]);
+
+// ---------- DASHBOARD STATISTICS ----------
+
+const [stats, setStats] = useState<LeadStats | null>(null);
+
+const [statsLoading, setStatsLoading] = useState(true);
+
+const [statsError, setStatsError] = useState("");
+
+const [statsRetryKey, setStatsRetryKey] = useState(0);
+
   const [pagination, setPagination] =
     useState<PaginationInfo | null>(null);
 
@@ -111,8 +124,14 @@ export default function DashboardPage() {
 
         if (signal?.aborted) return;
 
-        setLeads(data.leads);
-        setPagination(data.pagination);
+// Handle pages that no longer exist after an edit or deletion
+if (data.pagination.page > data.pagination.totalPages) {
+  setPage(data.pagination.totalPages);
+  return;
+}
+
+setLeads(data.leads);
+setPagination(data.pagination);
       } catch (error) {
         if (signal?.aborted) return;
 
@@ -139,6 +158,53 @@ export default function DashboardPage() {
       refresh
     ]
   );
+
+// ---------- LOAD DASHBOARD STATISTICS ----------
+
+const loadStats = useCallback(
+  async (signal?: AbortSignal) => {
+    setStatsLoading(true);
+    setStatsError("");
+
+    try {
+      const data = await apiRequest<LeadStatsResponse>(
+        "/leads/stats",
+        { signal }
+      );
+
+      if (signal?.aborted) return;
+
+      setStats(data.stats);
+    } catch (error) {
+      if (signal?.aborted) return;
+
+      setStats(null);
+      setStatsError(getErrorMessage(error));
+
+      if (
+        error instanceof ApiError &&
+        error.status === 401
+      ) {
+        void refresh();
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setStatsLoading(false);
+      }
+    }
+  },
+  [refresh]
+);
+
+// Fetch on initial load, after CRUD changes,
+// or when the user retries a failed statistics request.
+useEffect(() => {
+  const controller = new AbortController();
+
+  void loadStats(controller.signal);
+
+  return () => controller.abort();
+}, [loadStats, reloadKey, statsRetryKey]);
 
   // Fetch whenever filters, page, or reloadKey change
   useEffect(() => {
@@ -276,11 +342,16 @@ export default function DashboardPage() {
 
       // If the last row on a later page was deleted,
       // move back one page.
-      if (leads.length === 1 && page > 1) {
-        setPage((previous) => previous - 1);
-      } else {
-        setReloadKey((previous) => previous + 1);
-      }
+      
+// If the last record on a later page is removed,
+// navigate to the previous page.
+if (leads.length === 1 && page > 1) {
+  setPage((previous) => previous - 1);
+}
+
+// Always refresh both the table and dashboard statistics
+setReloadKey((previous) => previous + 1);
+
 
       // Use the result so TypeScript validates our API contract
       console.info("Deleted lead:", result.id);
@@ -389,6 +460,16 @@ export default function DashboardPage() {
             onCancel={closeForm}
           />
         )}
+
+
+<LeadStatsCards
+  stats={stats}
+  loading={statsLoading}
+  error={statsError}
+  onRetry={() =>
+    setStatsRetryKey((previous) => previous + 1)
+  }
+/>
 
         <section className="panel leads-section">
           <div className="section-heading">
